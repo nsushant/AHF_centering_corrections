@@ -1,0 +1,580 @@
+import pynbody
+import numpy as np
+import darklight 
+
+import sys
+from os import listdir
+from os.path import *
+import os
+
+import tangos
+import gc
+import csv
+import pandas as pd 
+
+
+'''
+Changes: 
+
+1. prev_time_ID was changed to include all particles upto the current snapshot in the cross-referencing 
+ 
+2. Recursive child finding was added (we don't find any children at snap 65 and at early times)
+
+3. Fix to run DMO sims without calculating the reffs 
+
+'''
+
+
+
+# get input params from user 
+
+
+haloname = sys.argv[1]
+cen_storage_file = sys.argv[2]
+#seed_main = int(sys.argv[3])
+
+def load_pynbody_data(simulation_name):
+    
+    sims = [str(simulation_name)]
+    
+    tangos_path_edge     = '/vol/ph/astro_data/shared/morkney/EDGE/tangos/'
+    tangos_path_chimera  = '/vol/ph/astro_data/shared/etaylor/CHIMERA/'
+    pynbody_path_edge    = '/vol/ph/astro_data/shared/morkney/EDGE/'
+    pynbody_path_chimera = '/vol/ph/astro_data/shared/etaylor/CHIMERA/'
+    pynbody_edge_gm =  '/vol/ph/astro_data2/shared/morkney/EDGE_GM/'
+
+    
+    for isim,simname in enumerate(sims):
+
+        print('==================================================')
+        print(simname)
+
+        # assign it a short name
+        split = simname.split('_')
+        DMOstate = split[1]
+        shortname = split[0][4:]
+        halonum = shortname[:]
+        if len(split) > 2:
+            if   halonum=='332': shortname += 'low'
+            elif halonum=='383': shortname += 'late'
+            elif halonum=='600': shortname += 'lm'
+            elif halonum=='624': shortname += 'hm'
+            elif halonum=='1459' and split[-1][-2:] == '02': shortname += 'mr02'
+            elif halonum=='1459' and split[-1][-2:] == '03': shortname += 'mr03'
+            elif halonum=='1459' and split[-1][-2:] == '12': shortname += 'mr12'
+            else:
+                print('unsupported simulation',simname,'! Not sure what shortname to give it. Aborting...')
+                continue
+        elif len(split)==2 and simname[-3:] == '_RT':  shortname += 'RT'
+
+        if DMOstate =='fiducial':
+            
+            #for genetically modified halos 
+            if simname[-3] == 'x':
+                HYDROname = 'Halo'+halonum+'_fiducial_'+'Mreion'+simname[-3:]
+
+            else:
+                HYDROname = 'Halo'+halonum+'_fiducial' + ('' if len(split)==2 else ('_' +  '_'.join(split[2:])))        
+
+        if DMOstate=='DMO':
+            #for genetically modified halos
+            if simname[-3] == 'x':
+                HYDROname = 'Halo'+halonum+'_DMO_'+'Mreion'+simname[-3:]
+
+            else:
+                HYDROname = 'Halo'+halonum+'_DMO' + ('' if len(split)==2 else ('_' +  '_'.join(split[2:])))
+
+                                            
+        
+        # set the correct paths to data files
+        if halonum == '383':
+            tangos_path  = tangos_path_chimera
+            pynbody_path = pynbody_path_chimera 
+        else:
+            tangos_path  = tangos_path_edge
+            pynbody_path = pynbody_path_edge if halonum == shortname else pynbody_edge_gm
+        
+        # get particle data at z=0 for DMO sims, if available
+        if HYDROname==None:
+            print('--> DMO particle does not data exists, skipping!')
+            continue
+        
+        # listdir returns the list of entries in a given dir path (like ls on a dir)
+        # isdir check if the given dir exists
+        # join creates a string consisting of the path,name,entry in dir
+        # once we have this string we check to see if the word 'output' is in this string (to grab only the output snapshots)
+        if pynbody_path[-3:]=='x02':
+            print('yes!!!!!!!')
+        
+        #makes pynbody load in the HOP halo catalogue instead of the default AHF 
+        pynbody.config["halo-class-priority"] = [pynbody.halo.hop.HOPCatalogue]
+        
+        snapshots = [ f for f in listdir(pynbody_path+HYDROname) if (isdir(join(pynbody_path,HYDROname,f)) and f[:6]=='output') ]
+        
+        #sort the list of snapshots in ascending order
+        snapshots.sort()
+         
+        HYDROsim = darklight.edge.load_tangos_data(simname)
+
+        HYDROparticles = darklight.edge.load_pynbody_data(simname)
+
+        HYDROparticles.physical_units()
+        #is this the HOP catalogue?
+        tangos_halo_catalog = HYDROsim.timesteps[-1].halos
+        
+        tangos_main_halo = tangos_halo_catalog[0]
+ 
+        #get HOP halonums 
+        halonums = tangos_main_halo.calculate_for_progenitors('halo_number()')[0][::-1]
+
+        hop_ids = HYDROparticles.halos()[int(halonums[-1])-1].dm['iord']
+        
+        
+        outputs = np.array([HYDROsim.timesteps[i].__dict__['extension'] for i in range(len(HYDROsim.timesteps))])[-len(halonums):]
+        t_all =  np.array([ HYDROsim.timesteps[i].__dict__['time_gyr'] for i in range(len(HYDROsim.timesteps)) ])
+                
+        print('HALONUMS:---',len(halonums), "OUTPUTS---",len(snapshots))
+        
+        return hop_ids,pynbody_path,halonums,HYDROname,HYDROsim,snapshots,outputs,t_all,DMOstate
+
+
+
+
+def get_child_iords(halo,halo_catalog,DMOstate='fiducial'):
+    
+    children_dm = np.array([])
+    
+    children_st = np.array([])
+
+    sub_halonums = np.array([]) 
+    
+    if (np.isin('children',list(halo.properties.keys())) == True) :
+        
+        children_halonums = halo.properties['children']
+    
+        sub_halonums = np.append(sub_halonums,children_halonums)
+        
+        #print(children_halonums)
+
+
+        for child in children_halonums:
+
+            if (len(halo_catalog[child].dm['iord']) > 0):
+            
+                children_dm = np.append(children_dm,halo_catalog[child].dm['iord'])
+
+                
+                
+            if DMO_state == 'fiducial':
+
+                if (len(halo_catalog[child].st['iord']) > 0 ):
+
+                    children_st = np.append(children_st,halo_catalog[child].st['iord'])
+
+            if (np.isin('children',list(halo_catalog[child].properties.keys())) == True) :
+                    
+                dm_2nd_gen,st_2nd_gen,sub_halonums_2nd_gen = get_child_iords(halo_catalog[child],halo_catalog,DMOstate)
+
+                children_dm = np.append(children_dm,dm_2nd_gen)
+                children_st = np.append(children_st,st_2nd_gen)
+                sub_halonums = np.append(sub_halonums,sub_halonums_2nd_gen)
+            #else:
+            #    print("there were no star or dark-matter iord arrays")
+                
+    #else: 
+    #    print("did not find children in halo properties list")
+    
+    return children_dm,children_st,sub_halonums
+                
+                
+
+def calc_rad_distance(particles):
+    return np.sqrt(particles['x']**2+particles['y']**2+particles['z']**2)
+
+
+def mutual(halo, IDs):
+    tf = np.in1d(halo.d["iord"], IDs)
+    return (len(tf[tf]) ** 2) / ((len(halo.d) * len(IDs)))
+
+def calc_3D_cm(particles,masses):
+
+    x_cm = sum(particles['x']*masses)/sum(masses)
+
+    y_cm = sum(particles['y']*masses)/sum(masses)
+
+    z_cm = sum(particles['z']*masses)/sum(masses)
+
+    return np.asarray([x_cm,y_cm,z_cm])
+
+
+
+def calculate_hlf_light(hparticles):
+
+    particles_ordered_by_distance = hparticles[np.argsort(np.sqrt(hparticles['pos'][:,0]**2 + hparticles['pos'][:,1]**2 + hparticles['pos'][:,2]**2))]
+    
+    cumulative_mass_by_distance = np.cumsum( particles_ordered_by_distance['mass'] )
+
+    halfradii = particles_ordered_by_distance['pos'][np.where(cumulative_mass_by_distance >= (cumulative_mass_by_distance[-1]/2) )[0][0]] if len(cumulative_mass_by_distance)!=0 else 0
+
+    reff = np.sqrt(halfradii[0]**2 + halfradii[1]**2 + halfradii[2]**2) if len(cumulative_mass_by_distance) !=0 else 0
+
+    return reff         
+
+
+
+hop_ids,pynbody_path,halonums,HYDROname,HYDROsim,snapshots,outputs,t_all,DMO_state = load_pynbody_data(haloname)
+
+print('got HOP IDs')
+
+
+
+pynbody.config["halo-class-priority"] = [pynbody.halo.ahf.AHFCatalogue]
+
+censAHFx = np.array([])
+censAHFy = np.array([])
+censAHFz = np.array([])
+
+censCMx = np.array([])
+censCMy = np.array([])
+censCMz = np.array([])
+
+censPYNx = np.array([])
+censPYNy = np.array([])
+censPYNz = np.array([])
+
+crossreffids = np.array([])
+irrs = np.array([])
+reffs = []
+ts = np.array([])
+prev_time_ID = []
+
+lifetimes_dm = np.array([])
+lifetimes_st = np.array([])
+
+#child_iords = np.array([])
+#child_s_iords = np.array([])
+        
+
+c=0 
+
+#child_iords = np.array([])
+#child_s_iords = np.array([])
+
+agg_children = []
+
+for i in range(len(snapshots))[::-1]:
+
+    child_iords = np.array([])
+    child_s_iords = np.array([])  
+    
+    reff_for_snap = np.nan
+    
+    idxout = np.asarray(np.where(outputs==snapshots[i])).flatten()
+    
+    
+    print("processing output: ",i)
+    
+    if idxout.shape[0] == 0 :
+        print('no matching output found')
+        continue
+    else:
+        iout = idxout[0]
+        print('found matching output: ',iout)
+    
+    #get the halo objects at the given timestep if and inform the user if no halos are present.
+    
+    if len(HYDROsim.timesteps[i].halos[:])==0:
+        print('No halos!')
+        continue      
+
+    try:
+        simfn = join(pynbody_path,HYDROname,snapshots[i])
+
+        print(simfn)
+        print('loading in DMO particles')
+        
+        simparticles = pynbody.load(simfn)
+        
+        simparticles.physical_units()
+        
+        print('loaded in particle data')
+        # once the data from the snapshot has been loaded, .physical_units()
+        # converts all array’s units to be consistent with the distance, velocity, mass basis units specified.
+                                           
+    except Exception as e:
+        print(e)
+        continue
+
+    
+    try:
+        h_AHF = simparticles.halos() #this would be AHF catalogue halos, first index is 1
+    except Exception as t:
+        print(t)
+        continue
+        
+        
+    # looks at upto 10 halos after the previous halo
+    look_upto = 500 if len(h_AHF)>500 else len(h_AHF)
+    print('Cross-referencing over first ',look_upto)
+        
+    print('len of halo_catalogue: ',len(h_AHF))
+    #h_AHF sliced at 10 halos after the previous halo's location 
+    h_AHF_l = [h_AHF[i] for i in range(1,look_upto)]
+            
+
+            
+    if len(prev_time_ID) != 0:
+    
+        cross_reference_haloID = np.array([mutual(AHF_halo,prev_time_ID) if len(AHF_halo.d)>0 else -1 for AHF_halo in h_AHF_l]).argsort()[-1]+1
+    
+        
+    elif len(prev_time_ID)==0:
+        
+        cross_reference_haloID = np.array([mutual(AHF_halo,hop_ids) if len(AHF_halo.d)>0 else -1 for AHF_halo in h_AHF_l]).argsort()[-1]+1
+
+           
+    print('found AHF halo')
+    
+    main_AHF_halo = h_AHF[cross_reference_haloID]
+
+    #print('main_halo_iords:',main_AHF_halo.st['iord'])
+    
+    print('Cross-referencing shows max membership in halo: ',cross_reference_haloID)
+
+    print('getting children')
+
+    #print('main halo iord:',main_AHF_halo.st['iord'])
+    
+    dm_children, st_children, sub_halonums = get_child_iords(main_AHF_halo,h_AHF,DMO_state)
+ 
+
+    if len(dm_children)>0:
+
+        child_iords = np.append(child_iords,dm_children) 
+
+    if len(st_children)>0:
+
+        child_s_iords = np.append(child_s_iords,st_children)
+    
+    '''    
+    sub_sub_halonums = np.array([]) 
+
+    if (np.isin('children',list(main_AHF_halo.properties.keys())) == True) :
+
+        children_main = main_AHF_halo.properties['children']
+    
+        if len(children_main)>0:
+    
+            for child_halonum in children_main:
+    
+                dm_grandchildren, st_grandchildren,c_halonums = get_child_iords(h_AHF[child_halonum],h_AHF,DMO_state)
+
+                sub_sub_halonums = np.append(sub_sub_halonums,c_halonums)
+                
+                if len(dm_grandchildren)>0:
+
+                    child_iords = np.append(child_iords,dm_grandchildren)
+
+                if DMO_state == 'fiducial':
+                    
+                    if len(st_grandchildren)>0:
+    
+                        child_s_iords = np.append(child_s_iords,st_grandchildren) 
+
+
+    
+    for halo in h_AHF[1:600]:
+
+        if (halo.properties['hostHalo'] == 0):
+            #(  ( (halo.properties['hostHalo'] == 0) or (halo.properties['hostHalo'] == 1) ) and (c != int(cross_reference_haloID) ) ):
+            try:
+                child_iords = np.append(child_iords,halo.d['iord'])
+            except:
+                continue
+            
+            try:
+                child_s_iords = np.append(child_s_iords,halo.s['iord'])
+            except:
+                continue
+        else:
+             continue
+    '''
+    #uncomment this to add lifetimes  
+    '''
+    if len(lifetimes_dm) == 0: 
+        lifetimes_dm = np.append(lifetimes_dm,child_iords)
+        lifetimes_st = np.append(lifetimes_st,child_s_iords)
+
+        lifetimes_dm = np.append(lifetimes_dm,-1)
+        lifetimes_dm = np.append(lifetimes_dm,-200)
+
+        lifetimes_st = np.append(lifetimes_st,-1)
+        lifetimes_st = np.append(lifetimes_st,-200)
+
+    else:
+       new_additions_dm = child_iords[np.logical_not(np.isin(child_iords,lifetimes_dm))]
+       new_additions_st = child_s_iords[np.logical_not(np.isin(child_s_iords,lifetimes_st))]
+
+       prev_lifetimes_dm = np.where(lifetimes_dm == -200)[0] 
+       prev_lifetimes_st = np.where(lifetimes_st == -200)[0]
+
+       lifetimes_dm[prev_lifetimes_dm - 1] -= 1
+       lifetimes_st[prev_lifetimes_st - 1] -= 1
+                     
+       split_arrays_dm = np.split(lifetimes_dm, prev_lifetimes_dm + 1)
+       split_arrays_st = np.split(lifetimes_st, prev_lifetimes_st + 1)
+         
+       filtered_arrays_dm = [arr for arr in split_arrays_dm if len(arr) >= 2 and arr[-2] > -20]
+       flat_array_dm = np.concatenate(filtered_arrays_dm)
+       lifetimes_dm = flat_array_dm
+
+
+       filtered_arrays_st = [arr for arr in split_arrays_st if len(arr) >= 2 and arr[-2] > -20]
+       flat_array_st = np.concatenate(filtered_arrays_st)
+       lifetimes_st = flat_array_st
+                            
+       lifetimes_dm = np.append(lifetimes_dm,new_additions_dm)
+       lifetimes_st = np.append(lifetimes_st,new_additions_st)
+                    
+       lifetimes_dm = np.append(lifetimes_dm,-1)
+       lifetimes_dm = np.append(lifetimes_dm,-200)
+
+       lifetimes_st = np.append(lifetimes_st,-1)
+       lifetimes_st = np.append(lifetimes_st,-200)
+       
+
+    '''
+       
+    flat_nums = sub_halonums.flatten()
+    
+    main_h_particles = h_AHF[cross_reference_haloID].d[np.logical_not(np.isin(h_AHF[cross_reference_haloID].d["iord"],child_iords))]
+
+    '''
+    if len(main_h_particles) == 0:
+         main_h_particles = h_AHF[cross_reference_haloID].d
+    '''
+
+    try:
+        cen_AHF = pynbody.analysis.halo.center_of_mass(main_h_particles)
+
+    except:
+        cen_AHF =  np.array([np.nan,np.nan,np.nan])
+
+        
+    if len(main_h_particles.d["iord"]) == 0:
+        print("no main halo particles")
+        continue
+    
+                            
+    prev_time_ID.clear()
+    
+    prev_time_ID.append(main_h_particles['iord'])
+    
+        
+    #cross_reference_haloID is then the ID used like > h_AHF[cross_reference_haloID] < that will be the closest match
+    
+    try:
+        cen_pynbody = pynbody.analysis.halo.center(h_AHF[cross_reference_haloID].d,retcen=True)
+    
+    #print(cen_pynbody)
+    except:
+        cen_pynbody = np.array([np.nan,np.nan,np.nan])
+
+    
+    
+    iords_exist = 0
+    
+    try:
+        main_AHF_halo.st["iord"]
+        iords_exist += 1
+    except:
+        print("no stars")
+        
+    
+
+    if ((iords_exist == 1) and (DMO_state == 'fiducial')):
+        if len(main_AHF_halo.st["iord"])>0:
+        
+            print('child_iords:',child_s_iords)
+            
+            main_h_stars = h_AHF[cross_reference_haloID].s[np.logical_not(np.isin(h_AHF[cross_reference_haloID].s["iord"],child_s_iords))]
+
+            '''
+            if len(main_h_stars) == 0:
+                main_h_stars = h_AHF[cross_reference_haloID].s
+            '''
+
+            main_h_stars.physical_units()
+
+            cm_stars = pynbody.analysis.halo.center_of_mass(main_h_stars)
+            
+            main_h_stars['pos'] -= pynbody.analysis.halo.center_of_mass(main_h_stars)
+            
+            try:
+                hlf = pynbody.analysis.luminosity.half_light_r(main_h_stars)
+                
+            except:
+                print("pynbody reff calc doesn't work")
+             
+            ### Uncomment to get half-mass radii ###
+            #hlf = calculate_hlf_light(main_h_stars)
+
+            print(hlf)
+            reffs.append(hlf)
+
+        else:
+            print('No stars in the main halo')
+            cm_stars = np.array([np.nan,np.nan,np.nan])
+            reffs.append(reff_for_snap)
+    else:
+        print('No stars in the main halo, no iords array')
+        cm_stars = np.array([np.nan,np.nan,np.nan])
+        reffs.append(reff_for_snap)
+
+    
+    irrs= np.append(irrs,i)
+    crossreffids = np.append(crossreffids,cross_reference_haloID)
+    ts = np.append(ts,t_all[i])
+            
+    censAHFx = np.append(censAHFx,cen_AHF[0])
+    censAHFy = np.append(censAHFy,cen_AHF[1])
+    censAHFz = np.append(censAHFz,cen_AHF[2])
+    
+    censCMx = np.append(censCMx,cm_stars[0])
+    censCMy = np.append(censCMy,cm_stars[1])
+    censCMz = np.append(censCMz,cm_stars[2])
+
+    censPYNx = np.append(censPYNx,cen_pynbody[0])
+    censPYNy = np.append(censPYNy,cen_pynbody[1])
+    censPYNz = np.append(censPYNz,cen_pynbody[2])
+
+    agg_children.append(flat_nums)
+    print('writing to output file')
+    
+        
+    print('Wrote to output')
+    del h_AHF_l
+    del h_AHF
+    del cross_reference_haloID
+    #del cen
+    del simparticles
+    del dm_children
+    del st_children
+    gc.collect()
+    
+print('writing to output file')
+
+
+
+df_centers = pd.DataFrame({'AHF catalogue id':crossreffids,'i':irrs,'t':ts,'children':agg_children,'xAHF':censAHFx,'yAHF':censAHFy,'zAHF':censAHFz,'xST':censCMx,'yST':censCMy,'zST':censCMz,'xPYN':censPYNx,'yPYN':censPYNy,'zPYN':censPYNz})
+df_centers.to_csv(str(cen_storage_file))
+
+'''
+if (DMO_state=='fiducial'):
+    
+    df = pd.DataFrame({'reff':reffs,'i':irrs,'AHF catalogue id':crossreffids,'t':ts,'children':agg_children})
+    #,'reffs':reffs})
+
+    df.to_csv(str(cen_storage_file))
+'''
+
