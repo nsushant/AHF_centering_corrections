@@ -389,33 +389,7 @@ for i in range(len(snapshots)):
 
         child_s_iords = np.append(child_s_iords,st_children)
     
-    '''    
-    sub_sub_halonums = np.array([]) 
-
-    if (np.isin('children',list(main_AHF_halo.properties.keys())) == True) :
-
-        children_main = main_AHF_halo.properties['children']
-    
-        if len(children_main)>0:
-    
-            for child_halonum in children_main:
-    
-                dm_grandchildren, st_grandchildren,c_halonums = get_child_iords(h_AHF[child_halonum],h_AHF,DMO_state)
-
-                sub_sub_halonums = np.append(sub_sub_halonums,c_halonums)
-                
-                if len(dm_grandchildren)>0:
-
-                    child_iords = np.append(child_iords,dm_grandchildren)
-
-                if DMO_state == 'fiducial':
-                    
-                    if len(st_grandchildren)>0:
-    
-                        child_s_iords = np.append(child_s_iords,st_grandchildren) 
-
-
-    
+    '''   
     for halo in h_AHF[1:600]:
 
         if (halo.properties['hostHalo'] == 0):
@@ -431,7 +405,7 @@ for i in range(len(snapshots)):
                 continue
         else:
              continue
-    '''
+    
     #uncomment this to add lifetimes  
     
     if len(lifetimes_dm) == 0: 
@@ -478,7 +452,7 @@ for i in range(len(snapshots)):
 
     flat_nums = sub_halonums.flatten()
     '''
-    #main_h_particles = main_AHF_halo.st[np.logical_not(np.isin(h_AHF[cross_reference_haloID].d["iord"],child_iords))]
+    main_h_particles = main_AHF_halo.st[np.logical_not(np.isin(h_AHF[cross_reference_haloID].d["iord"],child_iords))]
 
     
     if len(main_h_particles) == 0:
@@ -511,8 +485,7 @@ for i in range(len(snapshots)):
     except:
         cen_pynbody = np.array([np.nan,np.nan,np.nan])
 
-    
-    '''
+   
     iords_exist = 0
     
     try:
@@ -525,17 +498,15 @@ for i in range(len(snapshots)):
 
     if ((iords_exist == 1) and (DMO_state == 'fiducial')):
         if len(main_AHF_halo.st["iord"])>0:
-        
-        
             
-            main_h_stars = h_AHF[cross_reference_haloID].s[np.logical_not(np.isin(h_AHF[cross_reference_haloID].s["iord"],lifetimes_st))]
+            main_h_stars = h_AHF[cross_reference_haloID].s[np.logical_not(np.isin(h_AHF[cross_reference_haloID].s["iord"],child_s_iords))]
 
-            print(len(main_h_stars),len(lifetimes_st),len(h_AHF[cross_reference_haloID].s['iord']),'arr lens main only,lifetimes,all')
-            '''
+            print(len(main_h_stars),len(child_s_iords),len(h_AHF[cross_reference_haloID].s['iord']),'arr lens main only,lifetimes,all')
+            
             if len(main_h_stars) == 0:
                 main_h_stars = h_AHF[cross_reference_haloID].s
-            '''
-
+                print('no stars')
+           
             main_h_stars.physical_units()
 
             try:
