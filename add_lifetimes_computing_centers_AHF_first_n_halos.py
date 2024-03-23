@@ -251,10 +251,7 @@ prev_time_ID = []
 lifetimes_dm = np.array([])
 lifetimes_st = np.array([])
 
-#child_iords = np.array([])
-#child_s_iords = np.array([])
-        
-
+       
 c=0 
 
 #child_iords = np.array([])
@@ -337,13 +334,11 @@ for i in range(len(snapshots))[::-1]:
     
     main_AHF_halo = h_AHF[cross_reference_haloID]
 
-    #print('main_halo_iords:',main_AHF_halo.st['iord'])
     
     print('Cross-referencing shows max membership in halo: ',cross_reference_haloID)
 
     print('getting children')
 
-    #print('main halo iord:',main_AHF_halo.st['iord'])
     
     dm_children, st_children, sub_halonums = get_child_iords(main_AHF_halo,h_AHF,DMO_state)
  
@@ -356,32 +351,9 @@ for i in range(len(snapshots))[::-1]:
 
         child_s_iords = np.append(child_s_iords,st_children)
     
-    '''    
-    sub_sub_halonums = np.array([]) 
-
-    if (np.isin('children',list(main_AHF_halo.properties.keys())) == True) :
-
-        children_main = main_AHF_halo.properties['children']
-    
-        if len(children_main)>0:
-    
-            for child_halonum in children_main:
-    
-                dm_grandchildren, st_grandchildren,c_halonums = get_child_iords(h_AHF[child_halonum],h_AHF,DMO_state)
-
-                sub_sub_halonums = np.append(sub_sub_halonums,c_halonums)
-                
-                if len(dm_grandchildren)>0:
-
-                    child_iords = np.append(child_iords,dm_grandchildren)
-
-                if DMO_state == 'fiducial':
-                    
-                    if len(st_grandchildren)>0:
-    
-                        child_s_iords = np.append(child_s_iords,st_grandchildren) 
-
-
+   
+    '''
+    # Uncomment below to add first 'n' removal 
     
     for halo in h_AHF[1:600]:
 
@@ -398,9 +370,9 @@ for i in range(len(snapshots))[::-1]:
                 continue
         else:
              continue
-    '''
-    #uncomment this to add lifetimes  
-    '''
+             
+    # Uncomment below to add lifetimes
+    
     if len(lifetimes_dm) == 0: 
         lifetimes_dm = np.append(lifetimes_dm,child_iords)
         lifetimes_st = np.append(lifetimes_st,child_s_iords)
@@ -450,9 +422,12 @@ for i in range(len(snapshots))[::-1]:
     main_h_particles = h_AHF[cross_reference_haloID].d[np.logical_not(np.isin(h_AHF[cross_reference_haloID].d["iord"],child_iords))]
 
     '''
+    # for debugging 
     if len(main_h_particles) == 0:
          main_h_particles = h_AHF[cross_reference_haloID].d
+         print('No particles in main halo')
     '''
+
 
     try:
         cen_AHF = pynbody.analysis.halo.center_of_mass(main_h_particles)
@@ -491,7 +466,10 @@ for i in range(len(snapshots))[::-1]:
         print("no stars")
         
     
-
+    '''
+    # Deprecated part of the script. 
+    # Reff calculations were migrated to calc_AHF_with_lifetime.py 
+    
     if ((iords_exist == 1) and (DMO_state == 'fiducial')):
         if len(main_AHF_halo.st["iord"])>0:
         
@@ -499,10 +477,10 @@ for i in range(len(snapshots))[::-1]:
             
             main_h_stars = h_AHF[cross_reference_haloID].s[np.logical_not(np.isin(h_AHF[cross_reference_haloID].s["iord"],child_s_iords))]
 
-            '''
+            # for debugging 
             if len(main_h_stars) == 0:
                 main_h_stars = h_AHF[cross_reference_haloID].s
-            '''
+                print('No stars in main halo')
 
             main_h_stars.physical_units()
 
@@ -530,7 +508,7 @@ for i in range(len(snapshots))[::-1]:
         print('No stars in the main halo, no iords array')
         cm_stars = np.array([np.nan,np.nan,np.nan])
         reffs.append(reff_for_snap)
-
+    '''
     
     irrs= np.append(irrs,i)
     crossreffids = np.append(crossreffids,cross_reference_haloID)
@@ -570,6 +548,8 @@ df_centers = pd.DataFrame({'AHF catalogue id':crossreffids,'i':irrs,'t':ts,'chil
 df_centers.to_csv(str(cen_storage_file))
 
 '''
+# no need as reff calculations migrated to calc_ahf_reff_with_lifetime.py
+
 if (DMO_state=='fiducial'):
     
     df = pd.DataFrame({'reff':reffs,'i':irrs,'AHF catalogue id':crossreffids,'t':ts,'children':agg_children})
