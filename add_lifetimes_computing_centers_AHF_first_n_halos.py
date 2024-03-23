@@ -1,3 +1,5 @@
+
+# import statements 
 import pynbody
 import numpy as np
 import darklight 
@@ -13,25 +15,15 @@ import csv
 import pandas as pd 
 
 
-'''
-Changes: 
-
-1. prev_time_ID was changed to include all particles upto the current snapshot in the cross-referencing 
- 
-2. Recursive child finding was added (we don't find any children at snap 65 and at early times)
-
-3. Fix to run DMO sims without calculating the reffs 
-
-'''
-
-
 
 # get input params from user 
-
 
 haloname = sys.argv[1]
 cen_storage_file = sys.argv[2]
 #seed_main = int(sys.argv[3])
+
+
+########################### function definitions begin ############################
 
 def load_pynbody_data(simulation_name):
     
@@ -178,11 +170,7 @@ def get_child_iords(halo,halo_catalog,DMOstate='fiducial'):
                 children_dm = np.append(children_dm,dm_2nd_gen)
                 children_st = np.append(children_st,st_2nd_gen)
                 sub_halonums = np.append(sub_halonums,sub_halonums_2nd_gen)
-            #else:
-            #    print("there were no star or dark-matter iord arrays")
-                
-    #else: 
-    #    print("did not find children in halo properties list")
+  
     
     return children_dm,children_st,sub_halonums
                 
@@ -220,13 +208,11 @@ def calculate_hlf_light(hparticles):
 
     return reff         
 
-
+########################### function definitions end ############################
 
 hop_ids,pynbody_path,halonums,HYDROname,HYDROsim,snapshots,outputs,t_all,DMO_state = load_pynbody_data(haloname)
 
 print('got HOP IDs')
-
-
 
 pynbody.config["halo-class-priority"] = [pynbody.halo.ahf.AHFCatalogue]
 
