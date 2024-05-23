@@ -77,7 +77,7 @@ def load_pynbody_data(simulation_name):
                 HYDROname = 'Halo'+halonum+'_DMO' + ('' if len(split)==2 else ('_' +  '_'.join(split[2:])))
 
                                             
-        
+        '''
         # set the correct paths to data files
         if halonum == '383':
             tangos_path  = tangos_path_chimera
@@ -97,11 +97,12 @@ def load_pynbody_data(simulation_name):
         # once we have this string we check to see if the word 'output' is in this string (to grab only the output snapshots)
         if pynbody_path[-3:]=='x02':
             print('yes!!!!!!!')
-        
+        '''
+        pynbody_path = darklight.edge.get_pynbody_path(HYDROname)
         #makes pynbody load in the HOP halo catalogue instead of the default AHF 
         pynbody.config["halo-class-priority"] = [pynbody.halo.hop.HOPCatalogue]
         
-        snapshots = [ f for f in listdir(pynbody_path+HYDROname) if (isdir(join(pynbody_path,HYDROname,f)) and f[:6]=='output') ]
+        snapshots = [ f for f in listdir(pynbody_path) if f[:6]=='output']
         
         #sort the list of snapshots in ascending order
         snapshots.sort()
@@ -122,14 +123,15 @@ def load_pynbody_data(simulation_name):
         hop_ids = HYDROparticles.halos()[int(halonums[-1])-1].dm['iord']
         
         
-        outputs = np.array([HYDROsim.timesteps[i].__dict__['extension'] for i in range(len(HYDROsim.timesteps))])
+        #outputs = np.array([HYDROsim.timesteps[i].__dict__['extension'] for i in range(len(HYDROsim.timesteps))])
         #[-len(halonums):]
-        t_all =  np.array([ HYDROsim.timesteps[i].__dict__['time_gyr'] for i in range(len(HYDROsim.timesteps)) ])
+        #t_all =  np.array([ HYDROsim.timesteps[i].__dict__['time_gyr'] for i in range(len(HYDROsim.timesteps)) ])
 
         
-        print('HALONUMS:---',len(halonums), "OUTPUTS---",len(snapshots),len(outputs))
+        print('HALONUMS:---',len(halonums), "OUTPUTS---",len(snapshots))
         
-        return hop_ids,pynbody_path,halonums,HYDROname,HYDROsim,snapshots,outputs,t_all,DMOstate
+        return hop_ids,pynbody_path,halonums,HYDROname,HYDROsim,snapshots,DMOstate
+        #snapshots,outputs,t_all,DMOstate
 
 
 
@@ -213,7 +215,7 @@ def calculate_hlf_light(hparticles):
 
 ########################### function definitions end ############################
 
-hop_ids,pynbody_path,halonums,HYDROname,HYDROsim,snapshots,outputs,t_all,DMO_state = load_pynbody_data(haloname)
+hop_ids,pynbody_path,halonums,HYDROname,HYDROsim,snapshots,DMO_state = load_pynbody_data(haloname)
 
 print('got HOP IDs')
 

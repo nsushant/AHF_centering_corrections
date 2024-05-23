@@ -119,6 +119,8 @@ def load_pynbody_data(simulation_name):
         #get HOP halonums 
         halonums = tangos_main_halo.calculate_for_progenitors('halo_number()')[0][::-1]
 
+        print('starting with HOP halo: ',halonums[-1])
+
         hop_ids = HYDROparticles.halos()[int(halonums[-1])-1].dm['iord']
         
         
@@ -165,7 +167,7 @@ def get_child_iords(halo,halo_catalog,DMOstate='fiducial'):
 
                     children_st = np.append(children_st,halo_catalog[child].st['iord'])
                     
-                    
+            '''        
             if (np.isin('children',list(halo_catalog[child].properties.keys())) == True) :
                     
                 dm_2nd_gen,st_2nd_gen,sub_halonums_2nd_gen = get_child_iords(halo_catalog[child],halo_catalog,DMOstate)
@@ -173,7 +175,7 @@ def get_child_iords(halo,halo_catalog,DMOstate='fiducial'):
                 children_dm = np.append(children_dm,dm_2nd_gen)
                 children_st = np.append(children_st,st_2nd_gen)
                 sub_halonums = np.append(sub_halonums,sub_halonums_2nd_gen)
-            
+            '''
     
     return children_dm,children_st,sub_halonums
                 
@@ -299,10 +301,12 @@ for i in range(len(snapshots))[::-1]:
     except Exception as t:
         print(t)
         continue
-        
+    
+    if len(h_AHF)==0:
+        continue 
         
     # looks at upto 10 halos after the previous halo
-    look_upto = 500 if len(h_AHF)>300 else len(h_AHF)
+    look_upto = 500 if len(h_AHF)>500 else len(h_AHF)-1
     print('Cross-referencing over first ',look_upto)
         
     print('len of halo_catalogue: ',len(h_AHF))
@@ -313,8 +317,12 @@ for i in range(len(snapshots))[::-1]:
             
     if len(prev_time_ID) != 0:
     
-        cross_reference_haloID = np.array([mutual(AHF_halo,prev_time_ID) if len(AHF_halo.d)>0 else -1 for AHF_halo in h_AHF_l]).argsort()[-1]+1
-    
+        cross_reffing = np.array([mutual(AHF_halo,prev_time_ID) if len(AHF_halo.d)>0 else -1 for AHF_halo in h_AHF_l]).argsort()
+        cross_reference_haloID = cross_reffing[-1]+1 if (len(cross_reffing) > 0) else 0 
+
+        if cross_reference_haloID  == 0:
+            continue
+        
         
     elif len(prev_time_ID)==0:
         
@@ -323,8 +331,8 @@ for i in range(len(snapshots))[::-1]:
            
     print('found AHF halo')
     
+    
     main_AHF_halo = h_AHF[cross_reference_haloID]
-
     
     print('Cross-referencing shows max membership in halo: ',cross_reference_haloID)
 
@@ -414,8 +422,22 @@ for i in range(len(snapshots))[::-1]:
 
     main_h_particles.physical_units()
 
-    with pynbody.analysis.halo.center(main_h_particles):cross_reffing_set = main_h_particles[np.sqrt(main_h_particles['pos'][:,0]**2+main_h_particles['pos'][:,1]**2+main_h_particles['pos'][:,2]**2)<=4]
+    if len(main_h_particles.d["iord"]) == 0:
+        print("no main halo particles")
+        continue
+                        
     
+    with pynbody.analysis.halo.center(main_h_particles):
+
+        try:
+            r200c_pyn = pynbody.analysis.halo.virial_radius(h_AHF[cross_reference_haloID].dm, overden=200, r_max=None, rho_def='critical')
+                                        
+            cross_reffing_set = h_AHF[cross_reference_haloID].dm[np.sqrt(main_h_particles['pos'][:,0]**2+main_h_particles['pos'][:,1]**2+main_h_particles['pos'][:,2]**2) <= r200c_pyn]
+
+        except Exception as r200_err:
+            print('R200 calc malfunction with error ',r200_err)
+            continue
+
     '''
     # for debugging 
     if len(main_h_particles) == 0:
@@ -444,13 +466,11 @@ for i in range(len(snapshots))[::-1]:
     #cross_reference_haloID is then the ID used like > h_AHF[cross_reference_haloID] < that will be the closest match
     
     try:
-        cen_pynbody = pynbody.analysis.halo.center(h_AHF[cross_reference_haloID].d,retcen=True)
-    
-    #print(cen_pynbody)
+        cen_pynbody = pynbody.analysis.halo.center(h_AHF[cross_reference_haloID].d,retcen=True)    
+
     except:
         cen_pynbody = np.array([np.nan,np.nan,np.nan])
 
-    
     
     iords_exist = 0
     
@@ -477,6 +497,7 @@ for i in range(len(snapshots))[::-1]:
             rhalf_calculation_set = main_halo_object.st
             
             main_h_stars = h_AHF[cross_reference_haloID].s[np.logical_not(np.isin(h_AHF[cross_reference_haloID].s["iord"],child_s_iords))]
+
             '''
             # for debugging 
             if len(main_h_stars) == 0:

@@ -262,15 +262,15 @@ lifetimes_st = np.array([])
 
 c=0 
 
-#child_iords = np.array([])
-#child_s_iords = np.array([])
+child_iords = np.array([])
+child_s_iords = np.array([])
 
 agg_children = []
 
 for i in range(len(snapshots)):
 
-    child_iords = np.array([])
-    child_s_iords = np.array([])  
+    #child_iords = np.array([])
+    #child_s_iords = np.array([])  
     
     reff_for_snap = np.nan
     
@@ -379,7 +379,7 @@ for i in range(len(snapshots)):
 
     main_AHF_halo = main_AHF_halo[np.logical_not(np.isin(main_AHF_halo.d['iord'],dm_children))] if len(dm_children) >0 else main_AHF_halo
 
-                                                                                                                                                                                                                                                            
+    print(len(st_children),len(dm_children),'<---children found')
 
     if len(dm_children)>0:
 
@@ -452,7 +452,7 @@ for i in range(len(snapshots)):
 
     flat_nums = sub_halonums.flatten()
     '''
-    main_h_particles = main_AHF_halo.st[np.logical_not(np.isin(h_AHF[cross_reference_haloID].d["iord"],child_iords))]
+    main_h_particles = main_AHF_halo.d[np.logical_not(np.isin(h_AHF[cross_reference_haloID].d["iord"],child_iords))]
 
     
     if len(main_h_particles) == 0:
@@ -471,9 +471,9 @@ for i in range(len(snapshots)):
         continue
     
                             
-    prev_time_ID.clear()
+    #prev_time_ID.clear()
     
-    prev_time_ID.append(main_h_particles['iord'])
+    #prev_time_ID.append(main_h_particles['iord'])
     
         
     #cross_reference_haloID is then the ID used like > h_AHF[cross_reference_haloID] < that will be the closest match
@@ -502,11 +502,13 @@ for i in range(len(snapshots)):
             main_h_stars = h_AHF[cross_reference_haloID].s[np.logical_not(np.isin(h_AHF[cross_reference_haloID].s["iord"],child_s_iords))]
 
             print(len(main_h_stars),len(child_s_iords),len(h_AHF[cross_reference_haloID].s['iord']),'arr lens main only,lifetimes,all')
-            
+
+            '''
             if len(main_h_stars) == 0:
                 main_h_stars = h_AHF[cross_reference_haloID].s
                 print('no stars')
-           
+            '''
+
             main_h_stars.physical_units()
 
             try:
