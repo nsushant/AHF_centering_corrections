@@ -14,7 +14,7 @@ import gc
 import csv
 import pandas as pd 
 
-
+from particle_tagging_package.functions_for_angular_momentum_tagging import *
 
 # get input params from user 
 
@@ -105,29 +105,19 @@ def load_pynbody_data(simulation_name):
         
         #sort the list of snapshots in ascending order
         snapshots.sort()
-         
-        HYDROsim = darklight.edge.load_tangos_data(simname)
 
+        HYDROsim,tangos_main_halo,halonums,outputs = get_the_right_halonums(simname,0)
+        
         HYDROparticles = darklight.edge.load_pynbody_data(simname)
 
         HYDROparticles.physical_units()
         #is this the HOP catalogue?
-        tangos_halo_catalog = HYDROsim.timesteps[-1].halos
-        
-        tangos_main_halo = tangos_halo_catalog[0]
- 
-        #get HOP halonums 
-        halonums = tangos_main_halo.calculate_for_progenitors('halo_number()')[0][::-1]
 
         print('starting with HOP halo: ',halonums[-1])
 
         hop_ids = HYDROparticles.halos()[int(halonums[-1])-1].dm['iord']
         
-        
-        outputs = np.array([HYDROsim.timesteps[i].__dict__['extension'] for i in range(len(HYDROsim.timesteps))])
-        #[-len(halonums):]
-        t_all =  np.array([ HYDROsim.timesteps[i].__dict__['time_gyr'] for i in range(len(HYDROsim.timesteps)) ])
-
+        t_all = main_halo.calculate_for_progenitors('t()')[0][::-1]
         
         print('HALONUMS:---',len(halonums), "OUTPUTS---",len(snapshots),len(outputs))
         
@@ -252,33 +242,15 @@ c=0
 
 agg_children = []
 
-for i in range(len(snapshots))[::-1]:
-    #for i in range(len(outputs))[::-1]:
+for i in range(len(outputs))[::-1]:
+
     child_iords = np.array([])
     child_s_iords = np.array([])  
     
     reff_for_snap = np.nan
     
-    idxout = np.asarray(np.where(outputs==snapshots[i])).flatten()
-    
-    print("processing output: ",idxout)
-    
-    if idxout.shape[0] == 0 :
-        print('no matching output found')
-        continue
-    else:
-        iout = idxout[0]
-        print('found matching output: ',iout)
-    
-    #get the halo objects at the given timestep if and inform the user if no halos are present.
-    print(i,' =inum' ,len(HYDROsim.timesteps))
-    
-    if len(HYDROsim.timesteps[iout].halos[:])==0:
-        print('No halos!')
-        continue      
-
     try:
-        simfn = join(pynbody_path,HYDROname,snapshots[i])
+        simfn = join(pynbody_path,HYDROname,outputs[i])
 
         print(simfn)
         print('loading in DMO particles')
@@ -303,10 +275,11 @@ for i in range(len(snapshots))[::-1]:
         continue
     
     if len(h_AHF)==0:
+        print('No halos in AHF catalogue')
         continue 
         
     # looks at upto 10 halos after the previous halo
-    look_upto = 500 if len(h_AHF)>500 else len(h_AHF)-1
+    look_upto = 300 if len(h_AHF)>500 else len(h_AHF)-1
     print('Cross-referencing over first ',look_upto)
         
     print('len of halo_catalogue: ',len(h_AHF))
@@ -417,7 +390,8 @@ for i in range(len(snapshots))[::-1]:
     '''
        
     flat_nums = sub_halonums.flatten()
-    
+
+    # from main halo particle list remove child halo particle ids 
     main_h_particles = h_AHF[cross_reference_haloID].d[np.logical_not(np.isin(h_AHF[cross_reference_haloID].d["iord"],child_iords))]
 
     main_h_particles.physical_units()
@@ -431,7 +405,8 @@ for i in range(len(snapshots))[::-1]:
 
         try:
             r200c_pyn = pynbody.analysis.halo.virial_radius(h_AHF[cross_reference_haloID].dm, overden=200, r_max=None, rho_def='critical')
-                                        
+
+            # particles within the virial radius of the main halo in the ahf catalogue 
             cross_reffing_set = h_AHF[cross_reference_haloID].dm[np.sqrt(main_h_particles['pos'][:,0]**2+main_h_particles['pos'][:,1]**2+main_h_particles['pos'][:,2]**2) <= r200c_pyn]
 
         except Exception as r200_err:
@@ -493,8 +468,6 @@ for i in range(len(snapshots))[::-1]:
             main_halo_object = h_AHF[cross_reference_haloID]
             
             main_halo_object.physical_units()
-
-            rhalf_calculation_set = main_halo_object.st
             
             main_h_stars = h_AHF[cross_reference_haloID].s[np.logical_not(np.isin(h_AHF[cross_reference_haloID].s["iord"],child_s_iords))]
 
@@ -511,6 +484,9 @@ for i in range(len(snapshots))[::-1]:
             
             main_halo_object.st['pos'] -= pynbody.analysis.halo.center_of_mass(main_h_stars)
 
+            rhalf_calculation_set = main_halo_object.st
+            
+            '''
             if (len(reffs)>0):
             
                 r = pd.Series(reffs).dropna().values[-1]
@@ -518,7 +494,8 @@ for i in range(len(snapshots))[::-1]:
 
                 #main_h_stars = main_h_stars[np.sqrt(main_h_stars['pos'][:,0]**2+main_h_stars['pos'][:,1]**2+main_h_stars['pos'][:,2]**2)<= (5*reffs[-1])]
                 
-
+            '''
+            
             if len(rhalf_calculation_set['iord'])>0:
 
                 hlf = pynbody.analysis.luminosity.half_light_r(rhalf_calculation_set)
@@ -553,7 +530,7 @@ for i in range(len(snapshots))[::-1]:
     
     irrs= np.append(irrs,i)
     crossreffids = np.append(crossreffids,cross_reference_haloID)
-    ts = np.append(ts,t_all[iout])
+    ts = np.append(ts,t_all[i])
             
     censAHFx = np.append(censAHFx,cen_AHF[0])
     censAHFy = np.append(censAHFy,cen_AHF[1])
